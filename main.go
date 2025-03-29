@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"encoding/json"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -442,6 +443,56 @@ func associatePodsToServices(clientset *kubernetes.Clientset, graph *Graph, serv
 	}
 }
 
+func associatePodsToConfigMaps(clientset *kubernetes.Clientset, graph *Graph, configmaps *corev1.ConfigMapList, pods *corev1.PodList) { 
+	for _, c := range configmaps.Items { 
+		centitykey := EntityKey{Name: c.Name, Namespace: c.Namespace, Type: "ConfigMap"}
+		for _, p := range pods.Items {
+			var uses bool = false
+
+			for _, volume := range p.Spec.Volumes {
+				if (volume.ConfigMap != nil && volume.ConfigMap.Name == c.Name) {
+					pentitykey := EntityKey{Name: p.Name, Namespace: p.Namespace, Type: "Pod"}
+		
+					relationship := GraphRelationship{
+						Source: pentitykey,
+						Target: centitykey, 
+						RelationshipType: "Uses",
+						Properties: map[string]string{},
+						Revision: 1,
+					}
+					graph.Relationships = append(graph.Relationships, relationship)
+
+					uses = true
+					break
+				}
+			}
+
+			if (uses) { 
+				continue
+			}
+	
+			for _, container := range p.Spec.Containers {
+				for _, envFrom := range container.EnvFrom {
+					if envFrom.ConfigMapRef != nil && envFrom.ConfigMapRef.Name == c.Name {
+						pentitykey := EntityKey{Name: p.Name, Namespace: p.Namespace, Type: "Pod"}
+		
+						relationship := GraphRelationship{
+							Source: pentitykey,
+							Target: centitykey, 
+							RelationshipType: "Uses",
+							Properties: map[string]string{},
+							Revision: 1,
+						}
+						graph.Relationships = append(graph.Relationships, relationship)
+					}
+				}
+			}
+		}
+	}
+}
+
+
+
 func main() {
 	graph := Graph{
 		Nodes:         []GraphNode{},
@@ -471,7 +522,16 @@ func main() {
 	associateReplicaSetsToDeployments(clientset, &graph, deployments)
 	associatePodsToNodes(clientset, &graph, nodes, pods)
 	associatePodsToServices(clientset, &graph, services)
+	associatePodsToConfigMaps(clientset, &graph, configmaps, pods)
 
 	fmt.Printf("Graph with nodes: %+v\n", graph)
+
+    jsonDataIndented, err := json.MarshalIndent(graph, "", "  ")
+    if err != nil {
+        log.Fatalf("Error marshaling struct: %v", err)
+    }
+
+    fmt.Println("\nJSON:")
+    fmt.Println(string(jsonDataIndented))	
 }
 
