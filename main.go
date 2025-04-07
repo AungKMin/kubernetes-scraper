@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"encoding/json"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -499,39 +500,54 @@ func main() {
 		Relationships: []GraphRelationship{},
 	}
 	clientset, _ := loadClientSet()
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	// Start an infinite loop
+	run_iteration := 0
+
+	for {
+		select {
+		case <-ticker.C:
+			// Execute the function when the ticker ticks
+			replicasets, _ := getReplicaSets(clientset)
+			addReplicaSetsToGraph(&graph, replicasets)
+		
+			pods, _ := getPods(clientset)
+			addPodsToGraph(&graph, pods)
+		
+			deployments, _ := getDeployments(clientset)
+			addDeploymentsToGraph(&graph, deployments)
+		
+			nodes, _ := getNodes(clientset)
+			addNodesToGraph(&graph, nodes)
+		
+			services, _ := getServices(clientset)
+			addServicesToGraph(&graph, services)
+			
+			configmaps, _ := getConfigMaps(clientset)
+			addConfigMapsToGraph(&graph, configmaps)
+		
+			associatePodsToReplicaSets(clientset, &graph, replicasets)
+			associateReplicaSetsToDeployments(clientset, &graph, deployments)
+			associatePodsToNodes(clientset, &graph, nodes, pods)
+			associatePodsToServices(clientset, &graph, services)
+			associatePodsToConfigMaps(clientset, &graph, configmaps, pods)
+		
+			// fmt.Printf("Graph with nodes: %+v\n", graph)
+		
+			jsonDataIndented, err := json.MarshalIndent(graph, "", "  ")
+			if err != nil {
+				log.Fatalf("Error marshaling struct: %v", err)
+			}
+		
+			fmt.Println("\nJSON in iteration #%d:", run_iteration)
+			fmt.Println(string(jsonDataIndented))	
+
+			run_iteration += 1
+		}
+	}	
 	
-	replicasets, _ := getReplicaSets(clientset)
-	addReplicaSetsToGraph(&graph, replicasets)
-
-	pods, _ := getPods(clientset)
-	addPodsToGraph(&graph, pods)
-
-	deployments, _ := getDeployments(clientset)
-	addDeploymentsToGraph(&graph, deployments)
-
-	nodes, _ := getNodes(clientset)
-	addNodesToGraph(&graph, nodes)
-
-	services, _ := getServices(clientset)
-	addServicesToGraph(&graph, services)
-	
-	configmaps, _ := getConfigMaps(clientset)
-	addConfigMapsToGraph(&graph, configmaps)
-
-	associatePodsToReplicaSets(clientset, &graph, replicasets)
-	associateReplicaSetsToDeployments(clientset, &graph, deployments)
-	associatePodsToNodes(clientset, &graph, nodes, pods)
-	associatePodsToServices(clientset, &graph, services)
-	associatePodsToConfigMaps(clientset, &graph, configmaps, pods)
-
-	fmt.Printf("Graph with nodes: %+v\n", graph)
-
-    jsonDataIndented, err := json.MarshalIndent(graph, "", "  ")
-    if err != nil {
-        log.Fatalf("Error marshaling struct: %v", err)
-    }
-
-    fmt.Println("\nJSON:")
-    fmt.Println(string(jsonDataIndented))	
 }
 
